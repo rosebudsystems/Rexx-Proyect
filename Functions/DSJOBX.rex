@@ -2,7 +2,7 @@
 /*         EJECUTA UN JOB DE DATASTAGE               */
 /* FECHA: 01/06/2015                                 */
 /* AUTOR: ARO                                        */
-/* ULTIMA MODIFICACION: 21/10/2015                   */
+/* ULTIMA MODIFICACION: 29/09/2016                   */
 /*****************************************************/
 /*Imp2.0*/
 /*01-06-2015 Imp2.0.0 Se genera la nueva funcion DSJOBX para recibir parametros, cantidad de warnins y multinstancia*/
@@ -15,15 +15,20 @@
 /*Imp2.3*/
 /*21-10-2015 Se permite pasar el parametro -ERROR donde retornara en caso de cancelacion el codigo establecido en CODE_ERROR_FORCE s
 sino retronara el valor de CODE_ERROR (3609 valor standar por cancelacion DataStage) (ARO Imp2.3.1)*/
-/*21-10-2015 Se agregan variables para manejar lso codigos de errores (ARO Imp2.3.2)*/
+/*21-10-2015 Se agregan variables para manejar los codigos de errores (ARO Imp2.3.2)*/
 /*22-10-2015 Se agregan impreción de versionado en NUMERO_VERSION (ARO Imp2.3.3)*/
+/*Imp2.4*/
+/*29-09-2016 Se modifica la funcion Registry_Reading para que obtenga la nueva variable de entrono "CONTROLMOS" (version del Sistema operativo)
+De esta manera si es un Win2012 se utilizara para ingresar a la Registry Current_User, si es un 2003 o no esta especificado en la variable de entrono
+se usara Local_Machine. Comentario: la Tcswba03/04 utilizan Win2003 y batchwinqa01 y batchwinprod01 utilizan 2012 (ARO Imp2.4.1)*/
+/*29-09-2016 se modifica la funcion Read_Registry_Write_File, con los mismo cambios y motivos que se modifica la Registry_Reading (ARO Imp2.4.2) */
 PARSE UPPER ARG    !ambiente !nombre_proceso !pasonro !archivo_ini !path_clave !campo /*!pasonro !archivo_ini no se usan en esta funcion*/
 PARSE CASELESS ARG !xx       !xx             !xx      !xx          !xx         !campo1  /*ARO Imp2.2.1*/ 
 PARSE UPPER SOURCE !sist_op !calltype !full_name_this_file  /*!sist_op !calltype no se usan en esta funcion*/
 SIGNAL ON SYNTAX
 /*Drive*/
-/*ARO Imp2.3.3*/
-NUMERO_VERSION = '2.3.3'
+/*ARO Imp2.4.2*/
+NUMERO_VERSION = '2.4.2'
 CALL TIME 'R' /*Reseteo Cronometro*/
 FechaIni=DATE('S') /*S(Sring)  DATE('S') -> "19761224" */
 HoraIni =TIME('N') /*N(Normal) TIME('N') -> "13:15:22" */
@@ -405,7 +410,7 @@ EXIT 0
 /* ********************************* */
 _ADD_ERROR: PROCEDURE EXPOSE ErrorDsJob.
 PARSE ARG !id_error, !desc_error
-Number_Error = ErrorDsJob.Cant
+Number_Error    =  ErrorDsJob.Cant
 Number_Error 	=  Number_Error + 1
 
 ErrorDsJob.Number_Error.Description = !desc_error
@@ -420,10 +425,22 @@ PARSE ARG !field
 ObjRegistry =''
 ObjValRegistry =''
 ValData=''
+RC_Registry='' /*ARO Imp2.4.1*/
 Tree='SOFTWARE\BATCH\'||!nombre_proceso
+SO_VERSION = UPPER(VALUE('CONTROLMOS',,'ENVIRONMENT')) /*Variable de Entorno*//*ARO Imp2.4.1*/
 
 CALL WriteFile FILE_MSGFUN, ' ' 
 CALL WriteFile FILE_MSGFUN, 'Function: Registry_Reading. For field: ' || !field
+CALL WriteFile FILE_MSGFUN, 'Operating System Version:['|| SO_VERSION ||']'/*ARO Imp2.4.1*/
+
+/*ARO Imp2.4.1*/
+IF  SO_VERSION ='WIN2012' THEN DO
+	HandleKey  ='HKEY_CURRENT_USER'
+END
+ELSE DO
+	HandleKey  ='HKEY_LOCAL_MACHINE'
+END	
+/*ARO Imp2.4.1*/
 
 IF UPPER(!field) = NULL_VALUE THEN DO
 	CALL WriteFile FILE_MSGFUN, 'The variable name [' || !field || '] is a keyword. Is a word that is reserved by '|| Name_This_Function ||' function.' 
@@ -431,9 +448,18 @@ IF UPPER(!field) = NULL_VALUE THEN DO
 END
 ELSE DO			
 	ObjRegistry = .WindowsRegistry~new            
-	IF  ObjRegistry~InitCode = 0 THEN DO
-		IF ObjRegistry~open(ObjRegistry~Local_Machine,Tree) \= 0 THEN DO /* open the HKEY_LOCAL_MACHINE\SOFTWARE key. */
+	IF  ObjRegistry~InitCode = 0 THEN DO /*ARO Imp2.4.1*/
 	
+		/*ARO Imp2.4.1*/
+	    IF HandleKey = 'HKEY_CURRENT_USER' THEN DO 
+				RC_Registry = ObjRegistry~open(ObjRegistry~Current_User,Tree)
+		END 
+		ELSE DO /*Para Win WIN2003 o Null o cualquier otro win*/
+				RC_Registry = ObjRegistry~open(ObjRegistry~Local_Machine,Tree)
+		END
+		/*ARO Imp2.4.1*/
+		
+		IF RC_Registry  \= 0 THEN DO /*open the Handle Key\SOFTWARE. */ /*ARO Imp2.4.1*/
 			ObjValRegistry.=ObjRegistry~GETVALUE(,!field)
 			ValData=ObjValRegistry.data   
 		
@@ -455,7 +481,7 @@ ELSE DO
 			ObjRegistry~Close
 		END
 		ELSE DO
-			CALL WriteFile FILE_MSGFUN, 'Unexpected error opening the environment subkey: HKEY_LOCAL_MACHINE\SOFTWARE\' || Tree
+			CALL WriteFile FILE_MSGFUN, 'Unexpected error opening the environment subkey: '|| HandleKey ||'\SOFTWARE\' || Tree /*ARO Imp2.4.1*/
 			EXIT CODE_ERROR_REG_LOAD
 		END
 	END
@@ -548,13 +574,33 @@ ObjRegistry =''
 ObjQueryRegistry =''
 ValData=''
 Contador = 0
+RC_Registry=''/*ARO Imp2.4.2*/
 Tree='SOFTWARE\BATCH\'||!nombre_proceso
+SO_VERSION = UPPER(VALUE('CONTROLMOS',,'ENVIRONMENT')) /*Variable de Entorno*//*ARO Imp2.4.2*/
 
 CALL WriteFile FILE_MSGFUN, '----------Read the Registry ( '|| Tree || ' )----------'
-
+CALL WriteFile FILE_MSGFUN, 'Operating System Version:['|| SO_VERSION ||']'/*ARO Imp2.4.2*/
+/*ARO Imp2.4.2*/
+IF  SO_VERSION ='WIN2012' THEN DO
+	HandleKey  ='HKEY_CURRENT_USER'
+END
+ELSE DO
+	HandleKey  ='HKEY_LOCAL_MACHINE'
+END	
+/*ARO Imp2.4.2*/
 ObjRegistry = .WindowsRegistry~new            
 IF  ObjRegistry~InitCode = 0 THEN DO
-	IF ObjRegistry~open(ObjRegistry~Local_Machine,Tree) \= 0 THEN DO  /*open the HKEY_LOCAL_MACHINE\SOFTWARE key. */
+    
+	/*ARO Imp2.4.2*/
+	IF HandleKey = 'HKEY_CURRENT_USER' THEN DO
+		RC_Registry = ObjRegistry~open(ObjRegistry~Current_User,Tree)
+	END 
+	ELSE DO /*Para Win WIN2003 o Null o cualquier otro win*/
+		RC_Registry = ObjRegistry~open(ObjRegistry~Local_Machine,Tree)
+	END
+	/*ARO Imp2.4.2*/
+	
+	IF RC_Registry \= 0 THEN DO  /*open the Handle Key\SOFTWARE. *//*ARO Imp2.4.2*/
 		ObjQueryRegistry. = ObjRegistry~query 
 		IF ObjRegistry~ListValues(,ValData.) = 0 THEN DO Contador = 1 TO ObjQueryRegistry.values
 			CALL WriteFile FILE_MSGFUN, (ValData.Contador.name || '=' || ValData.Contador.data)
@@ -562,7 +608,7 @@ IF  ObjRegistry~InitCode = 0 THEN DO
 		ObjRegistry~Close
 	END
 	ELSE DO
-		CALL WriteFile FILE_MSGFUN, 'Unexpected error opening the environment subkey: HKEY_LOCAL_MACHINE\SOFTWARE\' || Tree
+		CALL WriteFile FILE_MSGFUN, 'Unexpected error opening the environment subkey: '|| HandleKey ||'\SOFTWARE\' || Tree /*ARO Imp2.4.2*/
 		EXIT CODE_ERROR_REG_LOAD
 	END
 END
