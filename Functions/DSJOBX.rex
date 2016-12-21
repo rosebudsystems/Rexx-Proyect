@@ -2,25 +2,48 @@
 /*         EJECUTA UN JOB DE DATASTAGE               */
 /* FECHA: 01/06/2015                                 */
 /* AUTOR: ARO                                        */
-/* ULTIMA MODIFICACION: 10/07/2015                   */
+/* ULTIMA MODIFICACION: 21/10/2015                   */
 /*****************************************************/
+/*Imp2.0*/
+/*01-06-2015 Imp2.0.0 Se genera la nueva funcion DSJOBX para recibir parametros, cantidad de warnins y multinstancia*/
+/*Imp2.1*/
 /*19-08-2015 Se corrige la apertura de los files ~makearray con open('READ SHAREREAD')(ARO Imp2.1.1)*/
 /*19-08-2015 Se permite setear mas de un PARAM  (ARO Imp2.1.2)*/
+/*Imp2.2*/
 /*27-08-2015 Se toman los parametros con el case que se escribieron (PARSE CASELESS ARG) (ARO Imp2.2.1)*/
 /*27-08-2015 Se permite pasar el proyecto y Job por valor. Ahora se puede pasar por valor y por variable (ARO Imp2.2.2)*/
+/*Imp2.3*/
+/*21-10-2015 Se permite pasar el parametro -ERROR donde retornara en caso de cancelacion el codigo establecido en CODE_ERROR_FORCE s
+sino retronara el valor de CODE_ERROR (3609 valor standar por cancelacion DataStage) (ARO Imp2.3.1)*/
+/*21-10-2015 Se agregan variables para manejar lso codigos de errores (ARO Imp2.3.2)*/
+/*22-10-2015 Se agregan impreción de versionado en NUMERO_VERSION (ARO Imp2.3.3)*/
 PARSE UPPER ARG    !ambiente !nombre_proceso !pasonro !archivo_ini !path_clave !campo /*!pasonro !archivo_ini no se usan en esta funcion*/
 PARSE CASELESS ARG !xx       !xx             !xx      !xx          !xx         !campo1  /*ARO Imp2.2.1*/ 
 PARSE UPPER SOURCE !sist_op !calltype !full_name_this_file  /*!sist_op !calltype no se usan en esta funcion*/
 SIGNAL ON SYNTAX
 /*Drive*/
-
+/*ARO Imp2.3.3*/
+NUMERO_VERSION = '2.3.3'
 CALL TIME 'R' /*Reseteo Cronometro*/
 FechaIni=DATE('S') /*S(Sring)  DATE('S') -> "19761224" */
 HoraIni =TIME('N') /*N(Normal) TIME('N') -> "13:15:22" */
 Rc_Ejecucion = 1
 ErrorDsJob.Cant =0
 
+/*ARO Imp2.3.2*/
+CODE_ERROR_FILE        = 3511 --Archivo de Claves no inicializado
+CODE_ERROR_FILE_LOOP   = 3512 --No se pudo recorrer el Archivo de Claves
+CODE_ERROR_FILE_EMPTY  = 3540 --Archivo de Claves no existe
+CODE_ERROR_FILE_NULL   = 3504 --Archivo de Parametros Iniciales no inicializado
 
+CODE_ERROR_REG_OPEN    = 3510 --No se puede Abrir la Registry
+CODE_ERROR_REG_LOAD	   = 4040 --No se puede acceder a la Registry
+CODE_ERROR_REG_DSJOBX  = 4041 --Error en lectura regestry para DSJOBX
+CODE_ERROR_DSJOBX      = 3613 --Error al ejecutar funcion DSJOBX
+CODE_ERROR_DST_LOG     = 3612 --Error al submitir el Job en Data Stage(Cancelación por los dos logs en 0 y rc=1): REPROCESARLO"
+/*ARO Imp2.3.2*/
+CODE_ERROR_DST         = 3609 --Error que se retorna frente a una cancelacion DataStage/*ARO Imp2.3.1*/
+CODE_ERROR_DST_FORCE   = 3614 --Error que se retorna frente a una cancelacion DataStage Forzada por el parametro -ERROR/*ARO Imp2.3.1*/
 CANT_RETRY =3
 TIMEOUT_RETRY = 10 /*En Segundos*/
 TIMEOUT_SLEEP = 2 /*Tiempo de espera para leer el Tamaño del fie (En Segundos)*/
@@ -73,7 +96,7 @@ File.FILE_DSJOB_ERROR.Path = Path_This_JCL
 File.FILE_DSJOB_ERROR.IsOpen = 0 /*False*/
 
 CALL WriteFile FILE_MSGFUN, '------------------------------------------------'
-CALL WriteFile FILE_MSGFUN, '* FUNCION ' || Name_This_Function || ' *'
+CALL WriteFile FILE_MSGFUN, '* FUNCION ' || Name_This_Function || ' - Versión '|| NUMERO_VERSION ||' *' /*ARO Imp2.3.3*/
 CALL WriteFile FILE_MSGFUN, DATE('N') ||' a las '|| TIME('N')  /* N(Normal) DATE('N') -> "24 Dec 1976" - / TIME('N') -> "13:15:22" */
 
 IF !ambiente == 'DESARROLLO' THEN DO 
@@ -86,7 +109,7 @@ IF !ambiente == 'DESARROLLO' THEN DO
 			OTHERWISE
 			DO
 				CALL WriteFile FILE_MSGFUN, '[' || !DsjobxEnvironment || '] Incorrect value for the global variable @DSJOBX_ENVIRONMENT'
-				EXIT 1
+				EXIT CODE_ERROR_DSJOBX
 			END
 		END /* SELECT */	
 	END /*END IF DsjobxEnvironment*/
@@ -147,6 +170,7 @@ VarWar=''
 /*VarParam=''*//*ARO Imp2.1.2*/
 VarParam.Cant =0/*ARO Imp2.1.2*/
 VarInst=''
+VarError = .FALSE. /*ARO Imp2.3.1*/ 
 i=3
 valor = WORD(!campo,i)
 DO WHILE ( valor  \= '' )
@@ -157,14 +181,14 @@ DO WHILE ( valor  \= '' )
 		CALL _ADD_ERROR 'E-X01',  '[' || valor || '] No se permiten setear mas de 3 comandos a la funcion.'
 	END*//*ARO Imp2.1.2*/
 	
-	IF  ((valor \='-WAR')  & (valor \= '-PARAM') & (valor \= '-INS' )) THEN DO
-		CALL _ADD_ERROR 'E-X02',  'Solo se permite setear los comandos -INS -WAR o -PARAM a la funcion. (Utilizo el comando: ' || valor || ').'
+	IF  ((valor \='-WAR')  & (valor \= '-PARAM') & (valor \= '-INS' ) & (valor \= '-ERROR' )) THEN DO /*ARO Imp2.3.1*/
+		CALL _ADD_ERROR 'E-X02',  'Solo se permite setear los comandos -INS -WAR -PARAM o -ERROR a la funcion. (Utilizo el comando: ' || valor || ').'
 	END
 	
 	/*IF (((valor = '-WAR') & (VarWar \= '' )) | ((valor = '-PARAM') & (VarParam \= '' )) | ((valor = '-INS') & (VarInst \= '' ))) THEN DO
 		CALL _ADD_ERROR 'E-X03',  'No se puede setear mas de una vez el mismo comando [' || valor || '].'
 	END*//*ARO Imp2.1.2*/
-	IF (((valor = '-WAR') & (VarWar \= '' )) | ((valor = '-INS') & (VarInst \= '' ))) THEN DO
+	IF (((valor = '-WAR') & (VarWar \= '' )) | ((valor = '-INS') & (VarInst \= '' )) | ((valor = '-ERROR') & (VarError = .TRUE. )) ) THEN DO
 		CALL _ADD_ERROR 'E-X03',  'No se puede setear mas de una vez el mismo comando [' || valor || '].'
 	END	/*ARO Imp2.1.2*/
 	
@@ -174,6 +198,10 @@ DO WHILE ( valor  \= '' )
 	i = i +1
 	parametro = WORD(!campo,i)
 	
+	IF (valor = '-ERROR') THEN DO	/*ARO Imp2.3.1*/
+			VarError  = .TRUE.
+	END
+
 	IF ( parametro == '') THEN DO
 		IF ((valor = '-WAR') | (valor = '-PARAM') | (valor = '-INS')) THEN DO
 			CALL _ADD_ERROR 'E-X04',  'Se precisa un parametro para el comando [' || valor || '].'
@@ -201,9 +229,11 @@ DO WHILE ( valor  \= '' )
 			(UPPER(STRREPLACE(valorparametro,'-','')) == 'PARAM') | ,
 			(UPPER(STRREPLACE(parametro     ,'-','')) == 'PARAM') | ,			
 			(UPPER(STRREPLACE(valorparametro,'-','')) == 'INS')   | ,
-			(UPPER(STRREPLACE(parametro     ,'-','')) == 'INS')		,
+			(UPPER(STRREPLACE(parametro     ,'-','')) == 'INS')	  | ,
+			(UPPER(STRREPLACE(valorparametro,'-','')) == 'ERROR') | ,/*ARO Imp2.3.1*/
+			(UPPER(STRREPLACE(parametro     ,'-','')) == 'ERROR')   ,/*ARO Imp2.3.1*/
 			) THEN DO
-			CALL _ADD_ERROR 'E-X06', 'No se permite una variable o valor con la palabra calve -INS, -WAR, -PARAM '
+			CALL _ADD_ERROR 'E-X06', 'No se permite una variable o valor con la palabra calve -INS, -WAR, -PARAM -ERROR' /*ARO Imp2.3.1*/
 		END	
 		IF ((registry  == NULL_VALUE) & (valor = '-PARAM')) THEN DO
 			CALL _ADD_ERROR 'E-P01', 'El comando -PARAM precisa recibir una variable.'
@@ -249,7 +279,7 @@ IF  ErrorDsJob.Cant >0 THEN DO
 			CALL WriteFile FILE_DSJOB_ERROR, 'ERROR:' || ErrorDsJob.irex.Id || ': ' || ErrorDsJob.irex.Description
 	end
 	CALL WriteFile FILE_DSJOB_ERROR
-	EXIT 3609
+	EXIT CODE_ERROR_DSJOBX
 END
 
 	IF  Instance \== '' THEN DO
@@ -334,14 +364,20 @@ END
 				!ejecutar
 				!ejecutar= Path_Exec ||' -run -mode RESET '||!proyecto||' '||Batch_Job 
 				!ejecutar
-
-
-				!log_linea='Error Nro. 3609 : Error al ejecutar el dsjob. ('||Rc_Ejecucion||')'
-				CALL WriteFile FILE_MSGFUN,!log_linea
 				
 				CALL Write_Time_DSSJOB(Rc_Ejecucion) 
-				EXIT 3609
-			end
+				
+				IF VarError = .TRUE. THEN DO /*ARO Imp2.3.1*/
+					!log_linea='Error Nro. 3614 : Error al ejecutar Job en Data Stage, error Forzado por DSJOBX -ERROR. ('||Rc_Ejecucion||')'
+					CALL WriteFile FILE_MSGFUN,!log_linea
+					EXIT CODE_ERROR_DST_FORCE
+				END
+				ELSE DO
+					!log_linea='Error Nro. 3609 : Error al ejecutar el dsjob. ('||Rc_Ejecucion||')'
+					CALL WriteFile FILE_MSGFUN,!log_linea
+					EXIT CODE_ERROR_DST
+				END
+			END
 	
 		!ejecutar= Path_Exec ||' -logsum '||!proyecto||' '||Batch_Job||' > ' || Path_This_JCL ||Batch_Job||'.log' 
 		!ejecutar
@@ -357,7 +393,7 @@ END
 			CALL WriteFile FILE_MSGFUN, '3612 : Error al submitir el Job en Data Stage. REPROCESARLO.'
 						
 			CALL Write_Time_DSSJOB(Rc_Ejecucion) 
-			EXIT 3612
+			EXIT CODE_ERROR_DST_LOG
 		END
 				
 CALL WriteFile FILE_MSGFUN
@@ -391,7 +427,7 @@ CALL WriteFile FILE_MSGFUN, 'Function: Registry_Reading. For field: ' || !field
 
 IF UPPER(!field) = NULL_VALUE THEN DO
 	CALL WriteFile FILE_MSGFUN, 'The variable name [' || !field || '] is a keyword. Is a word that is reserved by '|| Name_This_Function ||' function.' 
-	EXIT 1
+	EXIT CODE_ERROR_REG_DSJOBX
 END
 ELSE DO			
 	ObjRegistry = .WindowsRegistry~new            
@@ -407,12 +443,12 @@ ELSE DO
 			ELSE DO
 				IF (ValData='') THEN DO
 					CALL WriteFile FILE_MSGFUN, 'There is no set value for the variable name '|| !field
-					EXIT 1
+					EXIT CODE_ERROR_REG_DSJOBX
 				END
 				ELSE DO
 					IF UPPER(ValData) = NULL_VALUE THEN DO
 						CALL WriteFile FILE_MSGFUN, 'The value [' || ValData || '] of the variable named '|| !field ||' is a keyword. Is a word that is reserved by '|| Name_This_Function ||' function.' 
-						EXIT 1
+						EXIT CODE_ERROR_REG_DSJOBX
 					END
 				END
 			END
@@ -420,12 +456,12 @@ ELSE DO
 		END
 		ELSE DO
 			CALL WriteFile FILE_MSGFUN, 'Unexpected error opening the environment subkey: HKEY_LOCAL_MACHINE\SOFTWARE\' || Tree
-			EXIT 1
+			EXIT CODE_ERROR_REG_LOAD
 		END
 	END
 	ELSE DO
 		CALL WriteFile FILE_MSGFUN, 'Could not successfully create the WindowsRegistry object'
-		EXIT 1
+		EXIT CODE_ERROR_REG_OPEN
 	END
 
 	CALL WriteFile FILE_MSGFUN, 'The value for the field ' || !field || ' is: ' || ValData
@@ -446,7 +482,7 @@ DROP i
 infile=.stream~new(!path_file_get)
 if infile~query('exists')='' then do
 	CALL WriteFile FILE_MSGFUN,'Error nro. 3540: Archivo de Claves '|| !path_file_get ||' no existe'
-	EXIT 3540
+	EXIT CODE_ERROR_FILE_EMPTY
 	end 
 else do
 	infile~open('READ SHAREREAD') /*ARO Imp2.1.1*/
@@ -457,23 +493,20 @@ else do
 		if word(i,1) = !namekey then do
 			ValueField =word(i,!positionfield)   
 			if ValueField='' then do  
-				CALL WriteFile FILE_MSGFUN,'Error Nro. 3513:  Position Field: '|| !positionfield ||' is empty.'
-				EXIT 3513 
+				CALL WriteFile FILE_MSGFUN,'Error Nro. 3511:  Position Field: '|| !positionfield ||' is empty.'
+				EXIT CODE_ERROR_FILE 
 			end
 		end   
 	end
 	
 	if Count=0  then do
-		CALL WriteFile FILE_MSGFUN,'Count: '|| Count
-		CALL WriteFile FILE_MSGFUN,'i: '|| i
-		CALL WriteFile FILE_MSGFUN,'ValueField: '|| ValueField
 		CALL WriteFile FILE_MSGFUN,'Error Nro. 3512:  No se pudo recorrer el File: '|| !path_file_get 
-		EXIT 3512
+		EXIT CODE_ERROR_FILE_LOOP
 	end
 	else do
 		if ValueField='' then do  
-			CALL WriteFile FILE_MSGFUN,'Error Nro. 3511:  Name Key: '|| !namekey ||' no encontrada'
-			EXIT 3504  
+			CALL WriteFile FILE_MSGFUN,'Error Nro. 3504:  Name Key: '|| !namekey ||' no encontrada'
+			EXIT CODE_ERROR_FILE_NULL  
 		end
 	end	
 end
@@ -530,12 +563,12 @@ IF  ObjRegistry~InitCode = 0 THEN DO
 	END
 	ELSE DO
 		CALL WriteFile FILE_MSGFUN, 'Unexpected error opening the environment subkey: HKEY_LOCAL_MACHINE\SOFTWARE\' || Tree
-		EXIT 1
+		EXIT CODE_ERROR_REG_LOAD
 	END
 END
 ELSE DO
 	CALL WriteFile FILE_MSGFUN, 'Could not successfully create the WindowsRegistry object'
-	EXIT 1
+	EXIT CODE_ERROR_REG_OPEN
 END
 CALL WriteFile FILE_MSGFUN, '----------End Read the Registry----------'
 	
