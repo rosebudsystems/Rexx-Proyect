@@ -4,6 +4,8 @@
 /* AUTOR: ARO                                        */
 /* ULTIMA MODIFICACION: 10/07/2015                   */
 /*****************************************************/
+/*19-08-2015 Se corrige la apertura de los files ~makearray con open('READ SHAREREAD')*/
+/*19-08-2015 Se permite setear mas de un PARAM  (ARO Imp2.1)*/
 PARSE UPPER ARG !ambiente !nombre_proceso !pasonro !archivo_ini !path_clave !campo /*!pasonro !archivo_ini no se usan en esta funcion*/
 PARSE UPPER SOURCE !sist_op !calltype !full_name_this_file  /*!sist_op !calltype no se usan en esta funcion*/
 SIGNAL ON SYNTAX
@@ -133,7 +135,8 @@ ELSE DO
 	END
 END
 VarWar=''
-VarParam=''
+/*VarParam=''*//*ARO Imp2.1*/
+VarParam.Cant =0/*ARO Imp2.1*/
 VarInst=''
 i=3
 valor = WORD(!campo,i)
@@ -141,15 +144,21 @@ DO WHILE ( valor  \= '' )
 	parametro=''
 	valorparametro =''
 
-	IF ((VarWar \= '') & (VarParam \= '') & (VarInst \= '' )) THEN DO
+	/*IF ((VarWar \= '') & (VarParam \= '') & (VarInst \= '' )) THEN DO
 		CALL _ADD_ERROR 'E-X01',  '[' || valor || '] No se permiten setear mas de 3 comandos a la funcion.'
-	END
+	END*//*ARO Imp2.1*/
+	
 	IF  ((valor \='-WAR')  & (valor \= '-PARAM') & (valor \= '-INS' )) THEN DO
 		CALL _ADD_ERROR 'E-X02',  'Solo se permite setear los comandos -INS -WAR o -PARAM a la funcion. (Utilizo el comando: ' || valor || ').'
 	END
-	IF (((valor = '-WAR') & (VarWar \= '' )) | ((valor = '-PARAM') & (VarParam \= '' )) | ((valor = '-INS') & (VarInst \= '' ))) THEN DO
+	
+	/*IF (((valor = '-WAR') & (VarWar \= '' )) | ((valor = '-PARAM') & (VarParam \= '' )) | ((valor = '-INS') & (VarInst \= '' ))) THEN DO
 		CALL _ADD_ERROR 'E-X03',  'No se puede setear mas de una vez el mismo comando [' || valor || '].'
-	END
+	END*//*ARO Imp2.1*/
+	IF (((valor = '-WAR') & (VarWar \= '' )) | ((valor = '-INS') & (VarInst \= '' ))) THEN DO
+		CALL _ADD_ERROR 'E-X03',  'No se puede setear mas de una vez el mismo comando [' || valor || '].'
+	END	/*ARO Imp2.1*/
+	
 	IF ((valor = '-INS') & (Instance \= '')) THEN DO
 		 CALL _ADD_ERROR 'E-I01', 'No se permiten realizar una instancia por nombre de job y por el comando -INS'
 	END
@@ -206,7 +215,10 @@ DO WHILE ( valor  \= '' )
 			END
 		END
 		IF (valor = '-PARAM') THEN DO	
-			VarParam = parametro || '=' || valorparametro
+			/*VarParam = parametro || '=' || valorparametro*//*ARO Imp2.1*/
+			NumParam = VarParam.Cant + 1
+			VarParam.NumParam.Value  = parametro || '=' || valorparametro
+			VarParam.Cant = NumParam /*ARO Imp2.1*/
 		END
 		IF (valor = '-INS') THEN DO	
 			VarInst  = valorparametro 
@@ -239,13 +251,21 @@ END
 		Batch_Job  = Caller_Job || 'JOB'
 	END
 		
-		if VarParam \== '' then do
+		/*if VarParam \== '' then do
 			VarParam = '-param ' || VarParam
-		end
+		end*//*ARO Imp2.1*/
+		VarParam.Value = ''
+		IF VarParam.Cant >0 THEN DO
+			DO iparam=1 TO VarParam.Cant
+				VarParam.Value = VarParam.Value || ' -param ' || VarParam.iparam.Value   
+			END
+		END/*ARO Imp2.1*/
+		
 		if ValorWarningGlobal \== '' then do
 			ValorWarningGlobal  = '-warn ' || ValorWarningGlobal
 		end 
-		!ejecutar=  Path_Exec ||' -run -jobstatus '|| VarParam ||' '|| ValorWarningGlobal || ' ' || !proyecto||' '||Caller_Job
+		/*!ejecutar=  Path_Exec ||' -run -jobstatus '|| VarParam ||' '|| ValorWarningGlobal || ' ' || !proyecto||' '||Caller_Job*//*ARO Imp2.1*/
+		!ejecutar=  Path_Exec ||' -run -jobstatus '|| VarParam.Value ||' '|| ValorWarningGlobal || ' ' || !proyecto||' '||Caller_Job/*ARO Imp2.1*/
 		
 		Linea_Ejecucion = !ejecutar
 		Linea_Ejecucion = STRREPLACE(Linea_Ejecucion,!user,'XXXXXXXX') /* Oculta el User */
@@ -420,6 +440,7 @@ if infile~query('exists')='' then do
 	EXIT 3540
 	end 
 else do
+	infile~open('READ SHAREREAD')
 	lines=infile~makearray(line)
 	infile~close
 	do i over lines
