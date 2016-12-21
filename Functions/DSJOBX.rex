@@ -4,9 +4,12 @@
 /* AUTOR: ARO                                        */
 /* ULTIMA MODIFICACION: 10/07/2015                   */
 /*****************************************************/
-/*19-08-2015 Se corrige la apertura de los files ~makearray con open('READ SHAREREAD')*/
-/*19-08-2015 Se permite setear mas de un PARAM  (ARO Imp2.1)*/
-PARSE UPPER ARG !ambiente !nombre_proceso !pasonro !archivo_ini !path_clave !campo /*!pasonro !archivo_ini no se usan en esta funcion*/
+/*19-08-2015 Se corrige la apertura de los files ~makearray con open('READ SHAREREAD')(ARO Imp2.1.1)*/
+/*19-08-2015 Se permite setear mas de un PARAM  (ARO Imp2.1.2)*/
+/*27-08-2015 Se toman los parametros con el case que se escribieron (PARSE CASELESS ARG) (ARO Imp2.2.1)*/
+/*27-08-2015 Se permite pasar el proyecto y Job por valor. Ahora se puede pasar por valor y por variable (ARO Imp2.2.2)*/
+PARSE UPPER ARG    !ambiente !nombre_proceso !pasonro !archivo_ini !path_clave !campo /*!pasonro !archivo_ini no se usan en esta funcion*/
+PARSE CASELESS ARG !xx       !xx             !xx      !xx          !xx         !campo1  /*ARO Imp2.2.1*/ 
 PARSE UPPER SOURCE !sist_op !calltype !full_name_this_file  /*!sist_op !calltype no se usan en esta funcion*/
 SIGNAL ON SYNTAX
 /*Drive*/
@@ -104,9 +107,15 @@ Path_DsJobExe = Get_Value_In_File(Drive || Path_This_File || 'funcion.ini', Name
 Path_Exec = Path_DsJobExe || ' -domain NONE -server ' ||!server|| ' -user ' ||!user|| ' -password '|| !password
 
 !proyecto  = Registry_Reading(word(!campo,1)) /* busca dentro del proceso los campos seteados con $SetVar */
-Caller_Job = Registry_Reading(word(!campo,2))
-PARSE VAR Caller_Job Caller_Job '.' Instance
+IF (!proyecto  = NULL_VALUE) THEN DO 
+	!proyecto  = word(!campo1,1)
+END /*ARO Imp2.2.2*/
 
+Caller_Job = Registry_Reading(word(!campo,2))
+IF (Caller_Job = NULL_VALUE) THEN DO
+	Caller_Job = word(!campo1,2)
+END /*ARO Imp2.2.2*/
+PARSE VAR Caller_Job Caller_Job '.' Instance
 
 /*Quitar esta linea cuando se modifique el Job DataStage que lee el file C:\data\datastage\xxxx.txt*/
 CALL Write_Time_DSSJOB(Rc_Ejecucion) 
@@ -135,8 +144,8 @@ ELSE DO
 	END
 END
 VarWar=''
-/*VarParam=''*//*ARO Imp2.1*/
-VarParam.Cant =0/*ARO Imp2.1*/
+/*VarParam=''*//*ARO Imp2.1.2*/
+VarParam.Cant =0/*ARO Imp2.1.2*/
 VarInst=''
 i=3
 valor = WORD(!campo,i)
@@ -146,7 +155,7 @@ DO WHILE ( valor  \= '' )
 
 	/*IF ((VarWar \= '') & (VarParam \= '') & (VarInst \= '' )) THEN DO
 		CALL _ADD_ERROR 'E-X01',  '[' || valor || '] No se permiten setear mas de 3 comandos a la funcion.'
-	END*//*ARO Imp2.1*/
+	END*//*ARO Imp2.1.2*/
 	
 	IF  ((valor \='-WAR')  & (valor \= '-PARAM') & (valor \= '-INS' )) THEN DO
 		CALL _ADD_ERROR 'E-X02',  'Solo se permite setear los comandos -INS -WAR o -PARAM a la funcion. (Utilizo el comando: ' || valor || ').'
@@ -154,10 +163,10 @@ DO WHILE ( valor  \= '' )
 	
 	/*IF (((valor = '-WAR') & (VarWar \= '' )) | ((valor = '-PARAM') & (VarParam \= '' )) | ((valor = '-INS') & (VarInst \= '' ))) THEN DO
 		CALL _ADD_ERROR 'E-X03',  'No se puede setear mas de una vez el mismo comando [' || valor || '].'
-	END*//*ARO Imp2.1*/
+	END*//*ARO Imp2.1.2*/
 	IF (((valor = '-WAR') & (VarWar \= '' )) | ((valor = '-INS') & (VarInst \= '' ))) THEN DO
 		CALL _ADD_ERROR 'E-X03',  'No se puede setear mas de una vez el mismo comando [' || valor || '].'
-	END	/*ARO Imp2.1*/
+	END	/*ARO Imp2.1.2*/
 	
 	IF ((valor = '-INS') & (Instance \= '')) THEN DO
 		 CALL _ADD_ERROR 'E-I01', 'No se permiten realizar una instancia por nombre de job y por el comando -INS'
@@ -215,10 +224,10 @@ DO WHILE ( valor  \= '' )
 			END
 		END
 		IF (valor = '-PARAM') THEN DO	
-			/*VarParam = parametro || '=' || valorparametro*//*ARO Imp2.1*/
+			/*VarParam = parametro || '=' || valorparametro*//*ARO Imp2.1.2*/
 			NumParam = VarParam.Cant + 1
 			VarParam.NumParam.Value  = parametro || '=' || valorparametro
-			VarParam.Cant = NumParam /*ARO Imp2.1*/
+			VarParam.Cant = NumParam /*ARO Imp2.1.2*/
 		END
 		IF (valor = '-INS') THEN DO	
 			VarInst  = valorparametro 
@@ -253,19 +262,19 @@ END
 		
 		/*if VarParam \== '' then do
 			VarParam = '-param ' || VarParam
-		end*//*ARO Imp2.1*/
+		end*//*ARO Imp2.1.2*/
 		VarParam.Value = ''
 		IF VarParam.Cant >0 THEN DO
 			DO iparam=1 TO VarParam.Cant
 				VarParam.Value = VarParam.Value || ' -param ' || VarParam.iparam.Value   
 			END
-		END/*ARO Imp2.1*/
+		END/*ARO Imp2.1.2*/
 		
 		if ValorWarningGlobal \== '' then do
 			ValorWarningGlobal  = '-warn ' || ValorWarningGlobal
 		end 
-		/*!ejecutar=  Path_Exec ||' -run -jobstatus '|| VarParam ||' '|| ValorWarningGlobal || ' ' || !proyecto||' '||Caller_Job*//*ARO Imp2.1*/
-		!ejecutar=  Path_Exec ||' -run -jobstatus '|| VarParam.Value ||' '|| ValorWarningGlobal || ' ' || !proyecto||' '||Caller_Job/*ARO Imp2.1*/
+		/*!ejecutar=  Path_Exec ||' -run -jobstatus '|| VarParam ||' '|| ValorWarningGlobal || ' ' || !proyecto||' '||Caller_Job*//*ARO Imp2.1.2*/
+		!ejecutar=  Path_Exec ||' -run -jobstatus '|| VarParam.Value ||' '|| ValorWarningGlobal || ' ' || !proyecto||' '||Caller_Job/*ARO Imp2.1.2*/
 		
 		Linea_Ejecucion = !ejecutar
 		Linea_Ejecucion = STRREPLACE(Linea_Ejecucion,!user,'XXXXXXXX') /* Oculta el User */
@@ -440,7 +449,7 @@ if infile~query('exists')='' then do
 	EXIT 3540
 	end 
 else do
-	infile~open('READ SHAREREAD')
+	infile~open('READ SHAREREAD') /*ARO Imp2.1.1*/
 	lines=infile~makearray(line)
 	infile~close
 	do i over lines
