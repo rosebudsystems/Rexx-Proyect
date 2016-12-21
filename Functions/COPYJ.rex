@@ -1,16 +1,17 @@
 /****************************************************************/
-/*     COPIA UN ARCHIVO AGREGANDO AL NOMBRE                     */
-/*     DD + MM + AAAA + HORA + MIN + SEG                        */
-/*     Y NO CANCELA SI NO LO ENCUENTRA                          */
-/*     O SE PASO COMO TERCER PARAMETRO -0KB Y EL FILE PESA 0KB  */
-/*     Ejemplo: COPYJ Arch1 Arch2 -0KB                          */
+/*    COPIA UN ARCHIVO AGREGANDO AL NOMBRE                      */
+/*    DD + MM + AAAA + HORA + MIN + SEG                         */
+/*    Y NO CANCELA SI NO LO ENCUENTRA                           */
+/*    O SE PASO COMO TERCER PARAMETRO -0KB Y EL FILE PESA 0KB   */
+/*    Ejemplo: COPYJ Arch1 Arch2 -0KB                           */
 /*                                                              */
 /* FECHA: 09/03/2015                                            */
 /* AUTOR: ARO                                                   */
-/* ULTIMA MODIFICACION:22/08/2016                               */
+/* ULTIMA MODIFICACION:23/08/2016                               */
 /****************************************************************/
 /*Imp1.2*/
 /*22-08-2016 Se agrega la funcion Check_Size_File y se permite pasar el como tercer parametro "-0KB" para que si el file pesa 0KB se lo considere como que no existe. Ejemplo COPYJ Arch1 Arch2 -0KB (ARO Imp1.2)*/
+/*23-08-2016 Se modifica la funcion 0030_Logging_Copy (generacion msgcopy.tmp) para que envie el mensaje de la variable global log_linea en lugar del harcodeado en log_line (ARO Imp1.2.1)*/
 parse upper arg !ambiente !nombre_proceso !pasonro !archivo_ini !PathClave !campo 
 !fecha=Date('N') 
 !hora=TIME('N') 
@@ -122,8 +123,11 @@ end
 else do
 	!log_out~open(write append)   /* existe */
 end
-!log_line='Archivo de Usuario no encontrado '||!arch_ori
-!log_out~LINEOUT(!log_line)
+/*ARO Imp1.2.1*/
+--!log_line='Archivo de Usuario no encontrado '||!arch_ori
+--!log_out~LINEOUT(!log_line)
+!log_out~LINEOUT(!log_linea)
+/*ARO Fin Imp1.2.1*/
 !log_out~close
 return
 
